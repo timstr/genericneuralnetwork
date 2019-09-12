@@ -113,7 +113,7 @@ int main(int argc, char** argv){
             args.erase(args.begin());
         } else {
             std::cout << "Whoops! \"" << args[0] << "\" is not a known function.\n";
-            std::cout << "Please choose from one of the following.";
+            std::cout << "Please choose from one of the following.\n";
             for (const auto& nameFn : fns){
                 std::cout << " - " << nameFn.first << '\n';
             }

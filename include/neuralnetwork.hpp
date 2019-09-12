@@ -114,6 +114,7 @@ class LayerStack<Layer0Size, Layer1Size, OtherLayerSizes...> : public LayerStack
 public:
     LayerStack() noexcept
         : m_weights{}
+        , m_weightGradients{}
         , m_rawOutputs{}
         , m_transferredOutputs{} {
     }
@@ -166,6 +167,14 @@ public:
             this->Previous::backPropagate(inputDerivatives, stepSize);
         }
     }
+
+    void zeroGradients(){
+        // TODO
+    }
+
+    void adjustWeights(double stepSize){
+        // TODO
+    }
     
     template<std::size_t Layer>
     decltype(auto) weights() noexcept {
@@ -173,7 +182,7 @@ public:
             auto& ret = m_weights;
             return ret;
         } else {
-            return this->Previous::weights<Layer - 1>();
+            return this->Previous::template weights<Layer - 1>();
         }
     }
 
@@ -194,10 +203,10 @@ public:
 
 private:
     Weights<Previous::Neurons + 1, Neurons> m_weights;
+    Weights<Previous::Neurons + 1, Neurons> m_weightGradients;
     mutable std::array<double, Neurons> m_rawOutputs;
     mutable std::array<double, Neurons> m_transferredOutputs;
 };
-
 
 
 template<std::size_t Layer0Size, std::size_t... OtherLayerSizes>
@@ -221,9 +230,9 @@ public:
             compute(input);
             const auto transferredOutputs = layers.transferredOutputs();
             const auto rawOutputs = layers.rawOutputs();
-
-            lossAcc += detail::loss(transferredOutputs, expectedOutput);
-
+            
+            lossAcc += detail::loss<OutputNeurons>(transferredOutputs, expectedOutput);
+            
             std::array<double, OutputNeurons> outputDerivatives;
 
             for (std::size_t o = 0; o < OutputNeurons; ++o){
@@ -246,7 +255,7 @@ public:
 
     template<std::size_t Layer>
     double& weights(std::size_t input, std::size_t output) noexcept {
-        return layers.weights<Layer>()(input, output);
+        return layers.template weights<Layer>()(input, output);
     }
 
 private:
