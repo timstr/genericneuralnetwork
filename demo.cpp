@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-using NetworkType = NeuralNetwork<1, 4, 8, 16, 8, 4, 1>;
+using NetworkType = NeuralNetwork<1, 4, 8, 16, 1>;
 
 constexpr double pi = 3.141592654;
 
@@ -87,8 +87,9 @@ int main(int argc, char** argv){
     assert(args.size() > 1);
     args.erase(args.begin());
 
-    constexpr std::size_t ExamplesPerBatch = 1 << 15;
-    std::size_t Batches = 256;
+    constexpr std::size_t ExamplesPerBatch = 256;
+    std::size_t BatchesPerRun = 1 << 9;
+    std::size_t NumRuns = 256;
 
     if (args.size() > 0){
         static const std::map<std::string, FunctionSignature> fns = {
@@ -123,10 +124,18 @@ int main(int argc, char** argv){
         theFunction = sine;
     }
 
+    double learningRate = 10.0;
     if (args.size() > 0){
-        // TODO: choose number of iterations
-        // TODO: choose learning rate
+        try {
+            learningRate = std::stod(args[0]);
+        } catch (...){
+            std::cout << "Whoops! \"" << args[0] << "\" is not a valid learning rate.\n";
+            std::cout << "Please choose a valid learning rate, for example 0.1 or 0.03\n";
+            return 2;
+        }
     }
+
+    // TODO: choose number of iterations
 
     auto rd = std::random_device{};
     auto re = std::default_random_engine{rd()};
@@ -137,28 +146,32 @@ int main(int argc, char** argv){
 
     std::cout << "\nStarting training...\n";
     
-    for (std::size_t b = 0; b < Batches; ++b){
-        //std::array<std::array<double, 2>, ExamplesPerBatch> inputs;
-        std::array<double, ExamplesPerBatch> inputs;
-        std::array<double, ExamplesPerBatch> expected_outputs;
-        std::vector<std::pair<NetworkType::InputType, NetworkType::OutputType>> batch;
+    for (std::size_t r = 0; r < NumRuns; ++r){
+        double loss = 0.0;
+        for (std::size_t b = 0; b < BatchesPerRun; ++b){
+            //std::array<std::array<double, 2>, ExamplesPerBatch> inputs;
+            std::array<double, ExamplesPerBatch> inputs;
+            std::array<double, ExamplesPerBatch> expected_outputs;
+            std::vector<std::pair<NetworkType::InputType, NetworkType::OutputType>> batch;
 
-        for (std::size_t e = 0; e < ExamplesPerBatch; ++e){
-            //inputs[e][0] = dist(re);
-            //inputs[e][1] = dist(re);
-            inputs[e] = dist(re);
-            //expected_outputs[e] = inputs[e][0] + inputs[e][1];
-            expected_outputs[e] = theFunction(inputs[e]);
+            for (std::size_t e = 0; e < ExamplesPerBatch; ++e){
+                //inputs[e][0] = dist(re);
+                //inputs[e][1] = dist(re);
+                inputs[e] = dist(re);
+                //expected_outputs[e] = inputs[e][0] + inputs[e][1];
+                expected_outputs[e] = theFunction(inputs[e]);
 
-            //auto i = gsl::span{&inputs[e][0], 2};
-            auto i = gsl::span{&inputs[e], 1};
-            auto o = gsl::span{&expected_outputs[e], 1};
-            batch.push_back(std::pair{i, o});
+               //auto i = gsl::span{&inputs[e][0], 2};
+                auto i = gsl::span{&inputs[e], 1};
+                auto o = gsl::span{&expected_outputs[e], 1};
+                batch.push_back(std::pair{i, o});
+            }
+
+            loss += nn.takeStep(batch, learningRate);
         }
+        loss /= static_cast<double>(BatchesPerRun);
 
-        auto loss = nn.train(batch, 0.01);
-
-        std::cout << "Training batch " << b << ", loss: " << loss << "\n\n";
+        std::cout << "Training run " << r << ", loss: " << loss << "\n\n";
         printNetwork(nn);
         std::cout << '\n';
         std::cout.flush();

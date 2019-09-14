@@ -90,7 +90,6 @@ public:
             sigmoid
         );
         return m_transferredOutputs;
-        //return m_rawOutputs;
     }
 
     OutputType rawOutputs() const noexcept {
@@ -147,7 +146,7 @@ public:
     }
 
     // outputDerivatives is the derivative of the cost w.r.t. each output neuron (including sigmoid)
-    void backPropagate(OutputType outputDerivatives, double stepSize){
+    void backPropagateAdd(OutputType outputDerivatives){
         std::array<double, Previous::Neurons> inputDerivatives = {};
         const auto rawInputs = this->Previous::rawOutputs();
         const auto transferredInputs = this->Previous::transferredOutputs();
@@ -155,25 +154,39 @@ public:
         for (std::size_t o = 0; o < Neurons; ++o){
             for (std::size_t i = 0; i < Previous::Neurons; ++i){
                 inputDerivatives[i] += m_weights(i, o) * outputDerivatives[o];
-                m_weights(i, o) += outputDerivatives[o] * transferredInputs[i] * stepSize;
+                m_weightGradients(i, o) += outputDerivatives[o] * transferredInputs[i];
             }
-            m_weights(Previous::Neurons, o) += outputDerivatives[o] * 1.0 * stepSize;
+            m_weightGradients(Previous::Neurons, o) += outputDerivatives[o] * 1.0;
         }
         for (std::size_t i = 0; i < Previous::Neurons; ++i){
             inputDerivatives[i] *= sigmoidDerivative(rawInputs[i]);
         }
         
         if constexpr (sizeof...(OtherLayerSizes) > 0){
-            this->Previous::backPropagate(inputDerivatives, stepSize);
+            this->Previous::backPropagateAdd(inputDerivatives);
         }
     }
 
     void zeroGradients(){
-        // TODO
+        for (std::size_t i = 0; i < Previous::Neurons + 1; ++i){
+            for (std::size_t j = 0; j < Neurons; ++j){
+                m_weightGradients(i, j) = 0.0;
+            }
+        }
+        if constexpr (sizeof...(OtherLayerSizes) > 0){
+            this->Previous::zeroGradients();
+        }
     }
 
     void adjustWeights(double stepSize){
-        // TODO
+        for (std::size_t i = 0; i < Previous::Neurons + 1; ++i){
+            for (std::size_t j = 0; j < Neurons; ++j){
+                m_weights(i, j) += stepSize * m_weightGradients(i, j);
+            }
+        }
+        if constexpr (sizeof...(OtherLayerSizes) > 0){
+            this->Previous::adjustWeights(stepSize);
+        }
     }
     
     template<std::size_t Layer>
@@ -223,10 +236,11 @@ public:
         return layers.compute(inputs);
     }
 
-    double train(gsl::span<std::pair<InputType, OutputType>> examples, double step_size) noexcept {
+    double takeStep(gsl::span<std::pair<InputType, OutputType>> examples, double stepSize) noexcept {
         double lossAcc = 0.0;
+        layers.zeroGradients();
         for (const auto& [input, expectedOutput] : examples){
-
+            // layers.zeroGradients(); // testing
             compute(input);
             const auto transferredOutputs = layers.transferredOutputs();
             const auto rawOutputs = layers.rawOutputs();
@@ -239,8 +253,10 @@ public:
                 outputDerivatives[o] = sigmoidDerivative(rawOutputs[o]) * (expectedOutput[o] - transferredOutputs[o]);
             }
 
-            layers.backPropagate(outputDerivatives, step_size);
+            layers.backPropagateAdd(outputDerivatives);
+            // layers.adjustWeights(stepSize); // testing
         }
+        layers.adjustWeights(stepSize / static_cast<double>(examples.size()));
         return lossAcc / static_cast<double>(examples.size());
     }
 
