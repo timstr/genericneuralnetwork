@@ -167,14 +167,14 @@ public:
         }
     }
 
-    void zeroGradients(){
+    void scaleGradients(double scale){
         for (std::size_t i = 0; i < Previous::Neurons + 1; ++i){
             for (std::size_t j = 0; j < Neurons; ++j){
-                m_weightGradients(i, j) = 0.0;
+                m_weightGradients(i, j) *= scale;
             }
         }
         if constexpr (sizeof...(OtherLayerSizes) > 0){
-            this->Previous::zeroGradients();
+            this->Previous::scaleGradients(scale);
         }
     }
 
@@ -236,9 +236,9 @@ public:
         return layers.compute(inputs);
     }
 
-    double takeStep(gsl::span<std::pair<InputType, OutputType>> examples, double stepSize) noexcept {
+    double takeStep(gsl::span<std::pair<InputType, OutputType>> examples, double stepSize, double momentumRatio = 0.0) noexcept {
         double lossAcc = 0.0;
-        layers.zeroGradients();
+        layers.scaleGradients(momentumRatio);
         for (const auto& [input, expectedOutput] : examples){
             // layers.zeroGradients(); // testing
             compute(input);

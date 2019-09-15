@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-using NetworkType = NeuralNetwork<1, 4, 8, 16, 1>;
+using NetworkType = NeuralNetwork<1, 16, 16, 16, 1>;
 
 constexpr double pi = 3.141592654;
 
@@ -43,56 +43,60 @@ double triangle(double x) noexcept {
 using FunctionSignature = double (*)(double) noexcept;
 FunctionSignature theFunction = nullptr;
 
-constexpr std::size_t graphWidth = 60;
+constexpr std::size_t graphWidth = 70;
 constexpr std::size_t graphHeight = 30;
 
-void printNetwork(const NetworkType& nn){
-    std::array<std::size_t, graphWidth> heights;
+template<typename Function>
+void print(const Function& fn){
+    std::array<double, graphWidth> values;
     for (std::size_t gx = 0; gx < graphWidth; ++gx){
         const double t = (static_cast<double>(gx) / static_cast<double>(graphWidth - 1));
         const double x = t * (domain::max - domain::min) + domain::min;
-        const auto y = nn.compute(gsl::span{&x, 1})[0];
-        heights[gx] = static_cast<std::size_t>(std::round((1.0 - y) * graphHeight));
+        //const auto y = nn.compute(gsl::span{&x, 1})[0];
+        values[gx] = fn(x);
     }
-    
+
     for (std::size_t gy = 0; gy < graphHeight; ++gy){
+        const auto y = static_cast<double>(gy);
         for (std::size_t gx = 0; gx < graphWidth; ++gx){
-            std::cout << (heights[gx] > gy ? ' ' : '#');
+            const auto h = (1.0 - values[gx]) * static_cast<double>(graphHeight);
+            if (h > y + 1.0){
+                std::cout << ' ';
+            } else if (h > y + (2.0 / 3.0)){
+                std::cout << '_';
+            } else if (h > y + (1.0 / 3.0)){
+                std::cout << '=';
+            } else {
+                std::cout << '#';
+            }
+            //std::cout << (heights[gx] > gy ? ' ' : '#');
         }
         std::cout << '\n';
     }
+}
+
+void printNetwork(const NetworkType& nn){
+    print([&](double x){ return nn.compute(gsl::span{&x, 1})[0];});
 }
 
 void printFunction(){
-    std::array<std::size_t, graphWidth> heights;
-    for (std::size_t gx = 0; gx < graphWidth; ++gx){
-        const double t = (static_cast<double>(gx) / static_cast<double>(graphWidth - 1));
-        const double x = t * (domain::max - domain::min) + domain::min;
-        const auto y = theFunction(x);
-        heights[gx] = static_cast<std::size_t>(std::round((1.0 - y) * graphHeight));
-    }
-    
-    for (std::size_t gy = 0; gy < graphHeight; ++gy){
-        for (std::size_t gx = 0; gx < graphWidth; ++gx){
-            std::cout << (heights[gx] > gy ? ' ' : '#');
-        }
-        std::cout << '\n';
-    }
+    print(theFunction);
 }
 
 int main(int argc, char** argv){
-    
+
     auto args = std::vector<std::string>{argv, argv + argc};
 
     assert(args.size() > 1);
     args.erase(args.begin());
 
-    constexpr std::size_t ExamplesPerBatch = 256;
-    std::size_t BatchesPerRun = 1 << 9;
-    std::size_t NumRuns = 256;
+    constexpr std::size_t ExamplesPerBatch = 1024;
+    std::size_t BatchesPerRun = 1 << 6;
+    std::size_t NumRuns = 1 << 10;
 
     if (args.size() > 0){
         static const std::map<std::string, FunctionSignature> fns = {
+            {"sigmoid", sigmoid},
             {"linear", linear},
             {"sine", sine},
             {"sine2", [](double x) noexcept { return sine(2.0 * x); }},
@@ -135,6 +139,8 @@ int main(int argc, char** argv){
         }
     }
 
+    double momentumRatio = 0.5;
+
     // TODO: choose number of iterations
 
     auto rd = std::random_device{};
@@ -167,10 +173,11 @@ int main(int argc, char** argv){
                 batch.push_back(std::pair{i, o});
             }
 
-            loss += nn.takeStep(batch, learningRate);
+            loss += nn.takeStep(batch, learningRate, momentumRatio);
         }
         loss /= static_cast<double>(BatchesPerRun);
 
+        system("cls");
         std::cout << "Training run " << r << ", loss: " << loss << "\n\n";
         printNetwork(nn);
         std::cout << '\n';
