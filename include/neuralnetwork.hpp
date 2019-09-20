@@ -4,6 +4,7 @@
 #include <cassert>
 #include <cmath>
 #include <cstddef>
+#include <fstream>
 #include <random>
 #include <gsl/span>
 
@@ -20,6 +21,24 @@ namespace detail {
             acc += d * d;
         }
         return acc;
+    }
+
+    template<typename T>
+    void write(std::ofstream& ofs, const T& val){
+        ofs.write(reinterpret_cast<const char*>(&val), sizeof(T));
+        if (!ofs){
+            throw std::runtime_error("Failed to write to file");
+        }
+    };
+
+    template<typename T>
+    T read(std::ifstream& ifs){
+        T ret;
+        ifs.read(reinterpret_cast<char*>(&ret), sizeof(T));
+        if (!ifs){
+            throw std::runtime_error("Failed to read from file");
+        }
+        return ret;
     }
 }
 
@@ -214,6 +233,67 @@ public:
         return m_transferredOutputs;
     }
 
+    void writeLayerSizes(std::ofstream& ofs) const {
+        detail::write<std::size_t>(ofs, Neurons);
+        if constexpr (sizeof...(OtherLayerSizes) > 0){
+            this->Previous::writeLayerSizes(ofs);
+        } else {
+            detail::write<std::size_t>(ofs, Previous::Neurons);
+        }
+    }
+
+    void writeWeights(std::ofstream& ofs) const {
+        for (std::size_t i = 0; i < Previous::Neurons + 1; ++i){
+            for (std::size_t j = 0; j < Neurons; ++j){
+                detail::write<double>(ofs, m_weights(i, j));
+            }
+        }
+        if constexpr (sizeof...(OtherLayerSizes) > 0){
+            this->Previous::writeWeights(ofs);
+        }
+    }
+
+    void checkLayerSizes(std::ifstream& ifs) const {
+        auto n = detail::read<std::size_t>(ifs);
+        if (n != Neurons){
+            throw std::runtime_error("Network size mismatch while reading from file");
+        }
+        if constexpr (sizeof...(OtherLayerSizes) > 0){
+            this->Previous::checkLayerSizes(ifs);
+        } else {
+            auto n = detail::read<std::size_t>(ifs);
+            if (n != Previous::Neurons){
+                throw std::runtime_error("Network size mismatch while reading from file");
+            }    
+        }
+    }
+
+    void readWeights(std::ifstream& ifs){
+        for (std::size_t i = 0; i < Previous::Neurons + 1; ++i){
+            for (std::size_t j = 0; j < Neurons; ++j){
+                m_weights(i, j) = detail::read<double>(ifs);
+            }
+        }
+        if constexpr (sizeof...(OtherLayerSizes) > 0){
+            this->Previous::readWeights(ifs);
+        }
+    }
+
+    bool equals(const LayerStack& other) const noexcept {
+        for (std::size_t i = 0; i < Previous::Neurons + 1; ++i){
+            for (std::size_t j = 0; j < Neurons; ++j){
+                if (m_weights(i, j) != other.m_weights(i, j)){
+                    return false;
+                }
+            }
+        }
+        if constexpr (sizeof...(OtherLayerSizes) > 0){
+            return this->Previous::equals(other);
+        } else {
+            return true;
+        }
+    }
+
 private:
     Weights<Previous::Neurons + 1, Neurons> m_weights;
     Weights<Previous::Neurons + 1, Neurons> m_weightGradients;
@@ -226,6 +306,7 @@ template<std::size_t Layer0Size, std::size_t... OtherLayerSizes>
 class NeuralNetwork {
 public:
     using LayersType = LayerStack<Layer0Size, OtherLayerSizes...>;
+    static constexpr std::size_t NumLayers = 1ul + sizeof...(OtherLayerSizes);
 
     static constexpr std::size_t InputNeurons = LayersType::RootNeurons;
     static constexpr std::size_t OutputNeurons = LayersType::Neurons;
@@ -272,6 +353,41 @@ public:
     template<std::size_t Layer>
     double& weights(std::size_t input, std::size_t output) noexcept {
         return layers.template weights<Layer>()(input, output);
+    }
+
+    void saveWeights(std::string filepath) const {
+        std::ofstream ofs{filepath, std::ios::out | std::ios::binary};
+        if (!ofs){
+            throw std::runtime_error("Could not open file");
+        }
+
+        detail::write<std::size_t>(ofs, NumLayers);
+
+        layers.writeLayerSizes(ofs);
+        layers.writeWeights(ofs);
+    }
+
+    void loadWeights(std::string filepath){
+        std::ifstream ifs{filepath, std::ios::in | std::ios::binary};
+        if (!ifs){
+            throw std::runtime_error("Could not open file");
+        }
+
+        auto n = detail::read<std::size_t>(ifs);
+        if (n != NumLayers){
+            throw std::runtime_error("Wrong number of layers");
+        }
+
+        layers.checkLayerSizes(ifs);
+        layers.readWeights(ifs);
+    }
+
+    bool operator==(const NeuralNetwork& other) const noexcept {
+        return layers.equals(other.layers);
+    }
+
+    bool operator!=(const NeuralNetwork& other) const noexcept {
+        return !this->operator==(other);
     }
 
 private:

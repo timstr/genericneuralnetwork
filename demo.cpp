@@ -1,4 +1,5 @@
 #include <iostream>
+#include <functional>
 #include <map>
 #include <neuralnetwork.hpp>
 #include <string>
@@ -46,8 +47,7 @@ FunctionSignature theFunction = nullptr;
 constexpr std::size_t graphWidth = 70;
 constexpr std::size_t graphHeight = 30;
 
-template<typename Function>
-void print(const Function& fn){
+void print(std::function<double(double)> fn){
     std::array<double, graphWidth> values;
     for (std::size_t gx = 0; gx < graphWidth; ++gx){
         const double t = (static_cast<double>(gx) / static_cast<double>(graphWidth - 1));
@@ -76,7 +76,13 @@ void print(const Function& fn){
 }
 
 void printNetwork(const NetworkType& nn){
-    print([&](double x){ return nn.compute(gsl::span{&x, 1})[0];});
+    const auto fn = [&](double x){
+        std::array<double, 1> in = {x};
+        auto out = nn.compute(in);
+        return out[0];
+    };
+    print(fn);
+    //print([&](double x){ return nn.compute(gsl::span{&x, 1})[0];});
 }
 
 void printFunction(){
@@ -91,8 +97,8 @@ int main(int argc, char** argv){
     args.erase(args.begin());
 
     constexpr std::size_t ExamplesPerBatch = 1024;
-    std::size_t BatchesPerRun = 1 << 6;
-    std::size_t NumRuns = 1 << 10;
+    std::size_t BatchesPerRun = 1;// << 6;
+    std::size_t NumRuns = 1 << 3;// << 7;
 
     if (args.size() > 0){
         static const std::map<std::string, FunctionSignature> fns = {
@@ -150,6 +156,10 @@ int main(int argc, char** argv){
     auto nn = NetworkType{};
     nn.randomizeWeights();
 
+    std::cout << "Initial output:\n\n";
+
+    printNetwork(nn);
+
     std::cout << "\nStarting training...\n";
     
     for (std::size_t r = 0; r < NumRuns; ++r){
@@ -177,7 +187,6 @@ int main(int argc, char** argv){
         }
         loss /= static_cast<double>(BatchesPerRun);
 
-        system("cls");
         std::cout << "Training run " << r << ", loss: " << loss << "\n\n";
         printNetwork(nn);
         std::cout << '\n';
@@ -190,6 +199,27 @@ int main(int argc, char** argv){
     printFunction();
     std::cout << "\nActual Behavior:\n\n";
     printNetwork(nn);
+
+    std::cout << "File save test:\n";
+
+    nn.saveWeights("weights.dat");
+
+    {
+        auto nn2 = NetworkType{};
+        nn2.loadWeights("weights.dat");
+
+        std::cout << "Behavior after saving to and reading from file:\n\n";
+        printNetwork(nn2);
+
+        std::cout << "AAAAAAAAAAAAAAAAAAAAAA:\n\n";
+        printNetwork(nn);
+
+        if (nn != nn2){
+            std::cout << "Whoops, that is not the same network anymore. Drat.";
+        } else {
+            std::cout << "Nice! The network has identical weight values.";
+        }
+    }
 
     std::cout << '\n';
 }
