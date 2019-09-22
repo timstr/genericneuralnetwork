@@ -11,11 +11,11 @@
 namespace detail {
     std::random_device rand_dev;
     std::default_random_engine rand_eng {rand_dev()};
-    auto normal_dist = std::normal_distribution<double>{};
+    auto uniform_dist = std::uniform_real_distribution<double>{-0.5, 0.5};
 
     template<std::size_t N>
     double loss(gsl::span<const double, N> v1, gsl::span<const double, N> v2) noexcept {
-        double acc = 0;
+        double acc = 0.0;
         for (size_t i = 0; i < N; ++i){
             const auto d = v1[i] - v2[i];
             acc += d * d;
@@ -66,7 +66,7 @@ public:
     void randomize() noexcept {
         for (auto& a : values){
             for (auto& x : a){
-                x = detail::normal_dist(detail::rand_eng);
+                x = detail::uniform_dist(detail::rand_eng);
             }
         }
     }
@@ -166,7 +166,7 @@ public:
 
     // outputDerivatives is the derivative of the cost w.r.t. each output neuron (including sigmoid)
     void backPropagateAdd(OutputType outputDerivatives){
-        std::array<double, Previous::Neurons> inputDerivatives = {};
+        auto inputDerivatives = std::array<double, Previous::Neurons>{};
         const auto rawInputs = this->Previous::rawOutputs();
         const auto transferredInputs = this->Previous::transferredOutputs();
 
@@ -326,9 +326,9 @@ public:
             const auto transferredOutputs = layers.transferredOutputs();
             const auto rawOutputs = layers.rawOutputs();
             
-            lossAcc += detail::loss<OutputNeurons>(transferredOutputs, expectedOutput);
+            lossAcc += detail::loss(transferredOutputs, expectedOutput);
             
-            std::array<double, OutputNeurons> outputDerivatives;
+            auto outputDerivatives = std::array<double, OutputNeurons>{};
 
             for (std::size_t o = 0; o < OutputNeurons; ++o){
                 outputDerivatives[o] = sigmoidDerivative(rawOutputs[o]) * (expectedOutput[o] - transferredOutputs[o]);
