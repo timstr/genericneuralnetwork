@@ -96,18 +96,9 @@ public:
     using RootInputType = InputType;
     using OutputType = InputType;
 
-    OutputType compute(InputType inputs) const noexcept {
-        std::copy(
-            inputs.begin(),
-            inputs.end(),
-            m_rawOutputs.begin()
-        );
-        std::transform(
-            inputs.begin(),
-            inputs.end(),
-            m_transferredOutputs.begin(),
-            sigmoid
-        );
+    template<std::size_t Layer>
+    OutputType computePartial() const noexcept {
+        static_assert(Layer == 0);
         return m_transferredOutputs;
     }
 
@@ -117,6 +108,21 @@ public:
 
     OutputType transferredOutputs() const noexcept {
         return m_transferredOutputs;
+    }
+
+    template<std::size_t Layer>
+    void setActivation(std::size_t neuron, double value) noexcept {
+        static_assert(Layer == 0);
+        assert(neuron < Neurons);
+        m_rawOutputs[neuron] = value;
+        m_transferredOutputs[neuron] = sigmoid(value);
+    }
+
+    template<std::size_t Layer>
+    double getActivation(std::size_t neuron) const noexcept {
+        static_assert(Layer == 0);
+        assert(neuron < Neurons);
+        return m_rawOutputs[neuron];
     }
 
 private:
@@ -146,8 +152,12 @@ public:
     using RootInputType = typename Previous::RootInputType;
     using OutputType = gsl::span<const double, Neurons>;
 
-    OutputType compute(RootInputType rootInputs) const noexcept {
-        const auto inputs = this->Previous::compute(rootInputs);
+    template<std::size_t Layer>
+    OutputType computePartial() const noexcept {
+        auto inputs = this->Previous::transferredOutputs();
+        if constexpr (Layer > 0){
+            inputs = this->Previous::template computePartial<Layer - 1>();
+        }
 
         for (std::size_t o = 0; o < Neurons; ++o){
             double x = 0.0;
@@ -166,7 +176,8 @@ public:
 
     // outputDerivatives is the derivative of the cost w.r.t. each output neuron (including sigmoid)
     void backPropagateAdd(OutputType outputDerivatives){
-        auto inputDerivatives = std::array<double, Previous::Neurons>{};
+        auto inputDerivatives = std::vector<double>(Previous::Neurons, 0.0);
+        //auto inputDerivatives = std::array<double, Previous::Neurons>{};
         const auto rawInputs = this->Previous::rawOutputs();
         const auto transferredInputs = this->Previous::transferredOutputs();
 
@@ -215,6 +226,27 @@ public:
             return ret;
         } else {
             return this->Previous::template weights<Layer - 1>();
+        }
+    }
+
+    template<std::size_t Layer>
+    double getActivation(std::size_t neuron) const noexcept {
+        if constexpr (Layer == 0){
+            assert(neuron < Neurons);
+            return m_rawOutputs[neuron];
+        } else {
+            return this->Previous::template getActivation<Layer - 1>(neuron);
+        }
+    }
+
+    template<std::size_t Layer>
+    void setActivation(std::size_t neuron, double value) noexcept {
+        if constexpr (Layer == 0){
+            assert(neuron < Neurons);
+            m_rawOutputs[neuron] = value;
+            m_transferredOutputs[neuron] = sigmoid(value);
+        } else {
+            this->Previous::template setActivation<Layer - 1>(neuron, value);
         }
     }
 
@@ -313,8 +345,17 @@ public:
     using InputType = typename LayersType::RootInputType;
     using OutputType = typename LayersType::OutputType;
 
-    OutputType compute(InputType inputs) const noexcept {
-        return layers.compute(inputs);
+    OutputType compute(InputType inputs) noexcept {
+        for (std::size_t i = 0; i < InputNeurons; ++i){
+            this->template setActivation<NumLayers - 1>(i, inputs[i]);
+        }
+        return layers.template computePartial<NumLayers - 1>();
+    }
+
+    template<std::size_t Layer>
+    OutputType computePartial() const noexcept {
+        static_assert(Layer < NumLayers);
+        return layers.template computePartial<Layer - 1>();
     }
 
     double takeStep(gsl::span<std::pair<InputType, OutputType>> examples, double stepSize, double momentumRatio = 0.0) noexcept {
@@ -349,10 +390,29 @@ public:
     void randomizeWeights() noexcept {
         layers.randomizeWeights();
     }
+    
+    template<std::size_t Layer>
+    double getWeight(std::size_t input, std::size_t output) const noexcept {
+        static_assert(Layer < NumLayers);
+        return layers.template weights<Layer>()(input, output);
+    }
 
     template<std::size_t Layer>
-    double& weights(std::size_t input, std::size_t output) noexcept {
+    void setWeight(std::size_t input, std::size_t output, double value) noexcept {
+        static_assert(Layer < NumLayers);
         return layers.template weights<Layer>()(input, output);
+    }
+    
+    template<std::size_t Layer>
+    double getActivation(std::size_t neuron) const noexcept {
+        static_assert(Layer < NumLayers);
+        return layers.template getActivation<Layer>(neuron);
+    }
+
+    template<std::size_t Layer>
+    void setActivation(std::size_t neuron, double value) noexcept {
+        static_assert(Layer < NumLayers);
+        layers.template setActivation<Layer>(neuron, value);
     }
 
     void saveWeights(std::string filepath) const {
