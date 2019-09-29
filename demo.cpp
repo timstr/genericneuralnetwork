@@ -52,7 +52,6 @@ void print(std::function<double(double)> fn){
     for (std::size_t gx = 0; gx < graphWidth; ++gx){
         const double t = (static_cast<double>(gx) / static_cast<double>(graphWidth - 1));
         const double x = t * (domain::max - domain::min) + domain::min;
-        //const auto y = nn.compute(gsl::span{&x, 1})[0];
         values[gx] = fn(x);
     }
 
@@ -69,20 +68,18 @@ void print(std::function<double(double)> fn){
             } else {
                 std::cout << '#';
             }
-            //std::cout << (heights[gx] > gy ? ' ' : '#');
         }
         std::cout << '\n';
     }
 }
 
-void printNetwork(const NetworkType& nn){
+void printNetwork(NetworkType& nn){
     const auto fn = [&](double x){
         std::array<double, 1> in = {x};
         auto out = nn.compute(in);
         return out[0];
     };
     print(fn);
-    //print([&](double x){ return nn.compute(gsl::span{&x, 1})[0];});
 }
 
 void printFunction(){
@@ -96,9 +93,9 @@ int main(int argc, char** argv){
     assert(args.size() > 1);
     args.erase(args.begin());
 
-    constexpr std::size_t ExamplesPerBatch = 1024;
-    std::size_t BatchesPerRun = 1;// << 6;
-    std::size_t NumRuns = 1 << 3;// << 7;
+    constexpr std::size_t ExamplesPerBatch = 64;
+    std::size_t BatchesPerRun = 1 << 10;
+    std::size_t NumRuns = 1 << 8;
 
     if (args.size() > 0){
         static const std::map<std::string, FunctionSignature> fns = {
@@ -131,10 +128,10 @@ int main(int argc, char** argv){
             return 1;
         }
     } else {
-        theFunction = sine;
+        theFunction = linear;
     }
 
-    double learningRate = 10.0;
+    double learningRate = 0.1;
     if (args.size() > 0){
         try {
             learningRate = std::stod(args[0]);
@@ -145,7 +142,7 @@ int main(int argc, char** argv){
         }
     }
 
-    double momentumRatio = 0.5;
+    double momentumRatio = 0.75;
 
     // TODO: choose number of iterations
 
@@ -162,6 +159,7 @@ int main(int argc, char** argv){
 
     std::cout << "\nStarting training...\n";
     
+    std::size_t iterationCount = 0;
     for (std::size_t r = 0; r < NumRuns; ++r){
         double loss = 0.0;
         for (std::size_t b = 0; b < BatchesPerRun; ++b){
@@ -184,10 +182,11 @@ int main(int argc, char** argv){
             }
 
             loss += nn.takeStep(batch, learningRate, momentumRatio);
+            ++iterationCount;
         }
         loss /= static_cast<double>(BatchesPerRun);
 
-        std::cout << "Training run " << r << ", loss: " << loss << "\n\n";
+        std::cout << "Training run " << r << ", loss: " << loss << ", " << iterationCount << " iterations so far\n\n";
         printNetwork(nn);
         std::cout << '\n';
         std::cout.flush();
@@ -210,9 +209,6 @@ int main(int argc, char** argv){
 
         std::cout << "Behavior after saving to and reading from file:\n\n";
         printNetwork(nn2);
-
-        std::cout << "AAAAAAAAAAAAAAAAAAAAAA:\n\n";
-        printNetwork(nn);
 
         if (nn != nn2){
             std::cout << "Whoops, that is not the same network anymore. Drat.";
