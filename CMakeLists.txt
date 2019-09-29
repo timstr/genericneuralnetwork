@@ -6,11 +6,7 @@ set(neuralnetwork_includes
     include/neuralnetwork.hpp
 )
 
-set(neuralnetwork_srcs
-	src/neuralnetwork.cpp
-)
-
-add_library(neuralnetwork STATIC ${neuralnetwork_includes} ${neuralnetwork_srcs})
+add_library(neuralnetwork STATIC ${neuralnetwork_includes})
 target_include_directories(neuralnetwork
 	PUBLIC include
 	PUBLIC gsl/include
