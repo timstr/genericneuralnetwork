@@ -15,7 +15,7 @@ namespace detail {
     
     // Computes the sum of the squared error between two vectors of equal size
     // Effectively returns the inner product of those vectors
-    template<std::size_t N>
+    template<std::ptrdiff_t N>
     double loss(gsl::span<const double, N> v1, gsl::span<const double, N> v2) noexcept {
         double acc = 0.0;
         for (size_t i = 0; i < N; ++i){
@@ -78,7 +78,7 @@ public:
 
     // Assigns a random value to each weight
     void randomize() noexcept {
-        const auto uniform_dist = std::uniform_real_distribution<double>{-0.5, 0.5};
+        auto uniform_dist = std::uniform_real_distribution<double>{-0.5, 0.5};
         for (auto& a : values){
             for (auto& x : a){
                 x = uniform_dist(detail::rand_eng);
@@ -311,7 +311,7 @@ public:
         if constexpr (Layer == 0){
             return m_weights(input, output);
         } else {
-            return this->Previous::template getWeight<Layer - 1>(intput, output);
+            return this->Previous::template getWeight<Layer - 1>(input, output);
         }
     }
     
@@ -327,7 +327,7 @@ public:
             assert(output < Neurons);
             m_weights(input, output) = value;
         } else {
-            return this->Previous::template setWeight<Layer - 1>(intput, output, value);
+            return this->Previous::template setWeight<Layer - 1>(input, output, value);
         }
     }
 
